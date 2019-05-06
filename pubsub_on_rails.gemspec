@@ -1,19 +1,23 @@
 # encoding: utf-8
 
 $:.unshift File.expand_path('../lib', __FILE__)
-require 'pubsub_on_rails/version'
+require 'pub_sub/version'
 
 Gem::Specification.new do |s|
   s.name          = 'pubsub_on_rails'
-  s.version       = PubsubOnRails::VERSION
+  s.version       = PubSub::VERSION
   s.authors       = ['Stevo']
   s.email         = ['b.kosmowski@selleo.com']
-  s.homepage      = 'https://github.com/stevo/pubsub_on_rails'
+  s.homepage      = 'https://github.com/Selleo/pubsub_on_rails'
   s.licenses      = ['MIT']
-  s.summary       = '[summary]'
-  s.description   = '[description]'
+  s.summary       = 'Opinionated publish-subscribe pattern for ruby and rails'
+  s.description   = 'Opinionated publish-subscribe pattern for ruby and rails'
 
   s.files         = Dir.glob('{bin/*,lib/**/*,[A-Z]*}')
   s.platform      = Gem::Platform::RUBY
   s.require_paths = ['lib']
+  s.add_dependency 'dry-struct'
+  s.add_dependency 'wisper', '~> 2.0.0'
+  s.add_dependency 'wisper-sidekiq'
+  s.add_dependency 'wisper-rspec'
 end
