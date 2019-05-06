@@ -6,3 +6,4 @@ Gemfile.lock
 .env
 rdoc
 tmp
+.idea
