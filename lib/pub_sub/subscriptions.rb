@@ -31,8 +31,7 @@ module PubSub
         subscriptions.each do |event_name, subscription_type|
           options = {}
           options[:on] = event_name unless event_name == 'all_events'
-          options[:async] = true if subscription_type == 'async'
-          options[:broadcaster] = :run_once if subscription_type == 'run_once'
+          options[:broadcaster] = subscription_type == 'sync' ? :default : subscription_type.to_sym
 
           Wisper.subscribe("::#{domain_name.camelize}".constantize, options)
         end

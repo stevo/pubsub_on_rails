@@ -195,7 +195,7 @@ end
 ### Testing subscription
 
 Testing subscription is as easy as telling what domains should subscribe to what event in what way.
-
+Example of `subscribe_to` matcher can be found [here](https://gist.github.com/stevo/bd11c8dae812c919de6a61d1292dbfe1).
 Example:
 
 ```ruby
