@@ -16,7 +16,7 @@ This is especially true for applications covering many side effects, integration
 ```ruby
 # Gemfile
 
-gem 'pubsub_on_rails', '~> 0.0.1'
+gem 'pubsub_on_rails', '~> 0.0.3'
 
 # config/initializers/pub_sub.rb
 
