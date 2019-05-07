@@ -48,13 +48,12 @@ end
 
 Event is basically an object indicating that something has happened (event has occured).
 There are two important things that need to be considered when planning an event: its **name** and its **payload** (fields).
-Both are quite easy to change / extend later, but it might become a chore in the long run.
 
 Name of event should describe an action that has just happened, also it should be namespaced with the name of the domain it has occurred within.
 Some examples of good event names: `Ordering::OrderCancelled`, `Messaging::IncorrectLoginNotificationSent`, `Accounts::UserCreated`, `Bookings::CheckinDateChanged`, `Reporting::MonthlySalesReportGenerationRequested`
 
 Payload of event is just simple set of fields that should convey critical information related to the event.
-As the payload is critical for each event, PubSub on Rails leverages `Dry::Struct` and `Dry::Types` to ensure both presence and correct type of attributes events are created with.
+As the payload is very important for each event (it acts as a contract between publisher and handler), PubSub on Rails leverages `Dry::Struct` and `Dry::Types` to ensure both presence and correct type of attributes events are created with.
 It is a good rule of a thumb not to create too many fields for each event and just start with the minimal set. It is easy to add more fields to event's payload later (while it might be cumbersome to remove or change them).
 
 Event example:
@@ -77,7 +76,7 @@ end
 
 Event publisher is any class capable of emitting an event.
 Usually a great places to start emitting events are model callbacks, service objects or event handlers.
-It is very preferable to emit one specific event from only one place, as in most cases this is makes the most sense and makes the whole solution more comprehensible.
+It is very preferable to emit one specific event from only one place, as in most cases this makes the most sense and makes the whole solution more comprehensible.
 
 Event publisher example:
 
@@ -93,7 +92,7 @@ class Order < ApplicationRecord
   #...
 
   after_create do
-    emit(:ordering__guest_checked_in, order_id: id)
+    emit(:ordering__order_created, order_id: id)
   end
 end
 ```
@@ -119,6 +118,28 @@ module Messaging
 
     def order
       Order.find(event_data.order_id)
+    end
+  end
+end
+```
+
+All fields of event's payload are accessible through `event_data` method, which is a simple struct.
+
+#### Conditionally processing events
+
+If in any case you would like to control if given handler should be executed or not (maybe using feature flags), you can override `#process_event?` method.
+
+```ruby
+# app/event_handlers/messaging/ordering_order_created_handler.rb
+
+module Messaging
+  class OrderingOrderCreatedHandler < PubSub::DomainEventHandler
+    # ...
+
+    private
+
+    def process_event?
+      Features.notifications_enabled?
     end
   end
 end
@@ -218,6 +239,8 @@ end
 ### Testing handlers
 
 Handlers can be tested by testing their `call!` method, that calls `call` behind the scenes.
+To ensure event payload contract is met, please use `event_data_for` helper to build event payload hash.
+It will instantiate event object behind the scenes to ensure it exists and its payload requirements are met.
 
 Example:
 
@@ -228,7 +251,7 @@ module Messaging
       it 'delivers order creation notification' do
         order = create(:order)
         event_data = event_data_for(
-          'insights__person_created',
+          'ordering__order_created',
           order_id: order.id,
           total_amount: 100.99,
           comment: 'Small order',
@@ -246,14 +269,32 @@ module Messaging
   end
 end
 ```
+### Integration testing
+
+By default all subscriptions are cleared in testing environment to enforce testing in isolation.
+To enable integration testing, a test can be wrapped in block provided by `with_subscription_to` helper.
+This way events emitted by code executed within this block will be handled by handlers from domains provided as arguments to `with_subscription_to` helper.
+
+```ruby
+it 'does something' do
+    with_subscription_to('messaging', 'logging') do
+      # setup, subject, assertions etc.
+    end
+end
+```
 
 ### Subscriptions linting
 
-TODO
+It is a common problem to implement a publisher and handler and forget about implementing subscription.
+Without proper integration testing the problem might stay undetected before identified (hopefully) during manual testing.
+This is where subscriptions linting comes into play. All existing event handlers will be verified against registered subscriptions during linting process.
+In case of any mismatch, exception will be raised.
+
+To lint subscriptions, place `PubSub::Subscriptions.lint!` for instance in your `rails_helper.rb` or some initializer of choice.
 
 ## Logger
 
-Event though default domain always routes event subscriptions to correspondingly named event handlers, it is possible to implement domains that will route subscriptions in the different way.
+Even though default domain always routes event subscriptions to correspondingly named event handlers, it is possible to implement domains that will route subscriptions in the different way.
 The simplest way is to define it manually:
 
 ```ruby
@@ -325,12 +366,73 @@ Why `emit` then? `emit` provides a couple of simplifications that make emitting 
 Every time event is emitted, its payload is supplied to corresponding event class and is verified.
 This ensures that whenever we emit event we can be sure its payload is matching specification.
 
-TODO
+Example:
+
+```ruby
+module Accounts
+  class PersonCreatedEvent < DomainEvent
+    attribute :person_id, Types::Strict::Integer
+  end
+end
+```
+
+* `emit(:accounts__person_created, person_id: 1)` is ok
+* `emit(:accounts__person_created)` will result in ```PubSub::EventEmission::EventPayloadArgumentMissing: Event [Accounts::PersonCreatedEvent] expects [person_id] payload attribute to be either exposed as [person] method in emitting object or provided as argument```
+* `emit(:accounts__person_created, person_id: 'abc')` will result in ```Dry::Struct::Error: [Accounts::PersonCreatedEvent.new] "abc" (String) has invalid type for :person_id violates constraints (type?(Integer, "abc") failed)```
 
 ## Automatic event name prefixing
 
-TODO
+When you namespace your code to match your domain names, you can skip prefixing an event name with domain name when emitting it.
+
+```ruby
+# app/models/oriering/order.rb
+
+module Ordering
+  class Order < ApplicationRecord
+    include PubSub::Emit
+
+    after_create do
+      emit(:order_created, order_id: id)
+      # emit(:ordering__order_created, order_id: id) # this will work as well
+    end
+  end
+end
+```
 
 ## Automatic event payload population
 
-TODO
+Whenever you emit an event, it will try to populate its payload with data using public interface of object it is emitted from within. 
+
+```ruby
+# app/models/oriering/order.rb
+
+module Ordering
+  class Order < ApplicationRecord
+    include PubSub::Emit
+
+    after_create do
+      emit(:order_created, order_id: id)
+      # emit(
+      #   :ordering__order_created,
+      #   order_id: id, # `self` does not implement `order_id`, therefore value has to be provided explicitly here
+      #   total_amount: total_amount, # attribute matches the name of method on `self`, therefore it can be skipped
+      #   comment: comment # same here
+      # )
+    end
+  end
+end
+```
+
+## Manually broadcasting events
+
+If for some reason you need to safely broadcast some event, the best way is to instantiate its class and call `#broadcast!` on it.
+
+Example:
+
+```ruby
+Ordering::OrderCreatedEvent.new(order_id: 1, total_amount: 25, line_items: []).broadcast!
+```
+
+# TODO
+
+- Dynamic event classes
