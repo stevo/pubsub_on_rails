@@ -11,6 +11,19 @@ While it has little to do with event sourcing, it encompasses a couple of ideas 
 Therefore it is only useful in applications in which domains/bounded-contexts can be identified.
 This is especially true for applications covering many side effects, integrations and complex business logic.
 
+## Installation
+
+```ruby
+# Gemfile
+
+gem 'pubsub_on_rails', '~> 0.0.1'
+
+# config/initializers/pub_sub.rb
+
+PubSub::Subscriptions.subscriptions_path = Rails.root.join('config/subscriptions.yml')
+PubSub::Subscriptions.load!
+```
+
 ## Entities
 
 There are five entities that are core to PubSub on Rails: domains, events, event publishers, event handlers and subscriptions.
@@ -120,6 +133,8 @@ Subscription defines if given handler should be executed in synchronous or async
 Subscription example:
 
 ```yaml
+# config/subscriptions.yml
+
 messaging:
   ordering__order_created: async
 ```
@@ -232,6 +247,90 @@ module Messaging
 end
 ```
 
+### Subscriptions linting
+
+TODO
+
 ## Logger
 
-[TODO]
+Event though default domain always routes event subscriptions to correspondingly named event handlers, it is possible to implement domains that will route subscriptions in the different way.
+The simplest way is to define it manually:
+
+```ruby
+# app/domains/logging.rb
+
+module Messaging
+  def self.ordering__order_created(event_payload)
+    # whatever you need goes here
+  end
+end
+```
+
+This technique can be useful for instance for logging
+
+```ruby
+# app/domains/logging.rb
+
+module Logging
+  def self.event_logger
+    @event_logger ||= Logger.new("#{Rails.root}/log/#{Rails.env}_event_logger.log")
+  end
+
+  def self.method_missing(method_name, *event_data)
+    event_logger.info("Evt: #{method_name}: \n#{event_data.map(&:to_json).join(', ')}\n\n")
+  end
+
+  def self.respond_to_missing?(method_name, include_private = false)
+    method_name.to_s.start_with?(/[a-z_]+__/) || super
+  end
+end
+```
+
+```yaml
+# config/subscriptions.yml
+
+logging:
+  all_events: sync
+```
+
+# `emit` vs `broadcast`
+
+PubSub on Rails leverages `wisper` and `wisper-sidekiq` under the hood.
+This is why instead of using `emit`, you can broadcast events by using wisper's `broadcast` method.
+
+```ruby
+# app/models/order.rb
+
+class Order < ApplicationRecord
+  include Wisper::Publisher
+
+  #...
+
+  after_create do
+    broadcast(
+      :ordering__guest_checked_in,
+      order_id: id,
+      line_items: line_items,
+      total_amount: total_amount,
+      comment: comment
+    )
+  end
+end
+```
+
+Why `emit` then? `emit` provides a couple of simplifications that make emitting events easier and more reliable.
+
+## Payload verification
+
+Every time event is emitted, its payload is supplied to corresponding event class and is verified.
+This ensures that whenever we emit event we can be sure its payload is matching specification.
+
+TODO
+
+## Automatic event name prefixing
+
+TODO
+
+## Automatic event payload population
+
+TODO
