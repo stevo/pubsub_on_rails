@@ -2,7 +2,9 @@ module PubSub
   module Domain
     def method_missing(event_or_method_name, *event_data)
       if handler_name(event_or_method_name)
-        const_get(handler_name(event_or_method_name)).new(*event_data).call!
+        event_payload = event_data.extract_options!
+        EventTrace.load_from(event_payload.delete(:event_uid))
+        const_get(handler_name(event_or_method_name)).new(event_payload).call!
       else
         super
       end

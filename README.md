@@ -436,3 +436,4 @@ Ordering::OrderCreatedEvent.new(order_id: 1, total_amount: 25, line_items: []).b
 # TODO
 
 - Dynamic event classes
+- TYPES declaration
