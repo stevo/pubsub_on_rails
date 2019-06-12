@@ -7,7 +7,7 @@ module PubSub
     attribute :last_event_id
 
     def self.load_from(event_trace_uid)
-      match_data = event_trace_uid.match(EVENT_TRACE_UID_REGEX)
+      match_data = event_trace_uid&.match(EVENT_TRACE_UID_REGEX)
 
       if match_data
         self.trace_id = match_data['trace_id']
