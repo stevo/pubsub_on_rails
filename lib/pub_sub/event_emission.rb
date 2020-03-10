@@ -27,7 +27,7 @@ module PubSub
       event_payload_attribute_names.each_with_object({}) do |attribute_name, result|
         result[attribute_name] = PayloadAttribute.new(attribute_name, explicit_payload, context).get
       rescue PayloadAttribute::CannotEvaluate => cannot_evaluate_error
-        if event_class.schema[attribute_name.to_sym].default?
+        if event_class.schema.key(attribute_name).default?
           next
         else
           raise(
