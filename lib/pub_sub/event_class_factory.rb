@@ -5,8 +5,8 @@ module PubSub
     def self.build(event_name, domain_name: nil, abstract_event_class: nil)
       new(
         event_name,
-        domain_name: domain_name,
-        abstract_event_class: abstract_event_class
+        domain_name:,
+        abstract_event_class:
       ).build_event_class
     end
 
@@ -17,9 +17,13 @@ module PubSub
     end
 
     def build_event_class
+      event_class = res_event_class_name.safe_constantize
+
+      return event_class if event_class.present?
+
       event_class = event_class_name.safe_constantize
 
-      return event_class unless event_class.nil?
+      return event_class if event_class.present?
 
       if abstract_event_class.nil?
         raise(EventClassDoesNotExist, event_class_name)
@@ -46,10 +50,14 @@ module PubSub
 
     def event_name_with_domain
       if event_name_includes_domain?
-        event_name.to_s.sub('__', '/')
+        event_name.to_s.downcase.sub('__', '/')
       else
-        "#{domain_name}/#{event_name}"
+        [domain_name&.underscore, event_name].compact.join('/')
       end
+    end
+
+    def res_event_class_name
+      @res_event_class_name ||= "rails_event_store/#{event_name_with_domain}_event".classify
     end
 
     def event_class_name

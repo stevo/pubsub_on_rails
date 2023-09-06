@@ -17,7 +17,6 @@ Gem::Specification.new do |s|
   s.platform      = Gem::Platform::RUBY
   s.require_paths = ['lib']
   s.add_dependency 'dry-struct'
-  s.add_dependency 'wisper', '~> 2.0.0'
-  s.add_dependency 'wisper-sidekiq'
-  s.add_dependency 'wisper-rspec'
+  s.add_dependency 'rails_event_store'
+  s.add_dependency 'ruby_event_store-rspec'
 end
