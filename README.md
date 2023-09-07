@@ -16,12 +16,21 @@ This is especially true for applications covering many side effects, integration
 ```ruby
 # Gemfile
 
-gem 'pubsub_on_rails', '~> 0.0.7'
+gem 'pubsub_on_rails', '~> 1.0.0'
 
 # config/initializers/pub_sub.rb
 
-PubSub::Subscriptions.subscriptions_path = Rails.root.join('config/subscriptions.yml')
-PubSub::Subscriptions.load!
+require 'pub_sub/subscriptions_list'
+
+Rails.configuration.to_prepare do
+  Rails.configuration.event_store = event_store = RailsEventStore::Client.new(
+    repository: RailsEventStoreActiveRecord::EventRepository.new(serializer: RubyEventStore::NULL)
+  )
+
+  PubSub::SubscriptionsList.config_path =
+    Rails.root.join('config/subscriptions.yml')
+  PubSub::SubscriptionsList.load!(event_store)
+end
 ```
 
 ## Entities
@@ -40,7 +49,6 @@ Domain example:
 # app/domains/messaging.rb
 
 module Messaging
-  extend PubSub::Domain
 end
 ```
 
@@ -68,6 +76,26 @@ module Ordering
     attribute :line_items, Types::Strict::Array
     attribute :total_amount, Types::Strict::Float
     attribute :comment, Types::Strict::String.optional
+  end
+end
+```
+
+Since we are using Rails Event Store to create event this give as possibility to create **stream** of events. We can treat them as sub-list of events. To be able to use that functionality we need to declare which stream are interesting for us. By default we add event to stream based on its name. In case of our example it is `ordering__order_created`. We can provide also custom streams even based on some additional data from the event attributes.
+
+Event example:
+
+```ruby
+# app/events/rails_event_store/ordering/order_created_event.rb
+
+module RailsEventStore
+  module Ordering
+    class OrderCreatedEvent < PubSub::EventWithType
+      def stream_names
+        [
+          "order__#{data[:order_id]}"
+        ]
+      end
+    end
   end
 end
 ```
@@ -171,42 +199,90 @@ The recommended RSpec configuration is as follows:
 
 ```ruby
 # spec/support/pub_sub.rb
- 
+
 require 'pub_sub/testing'
 
+module Support
+  module RailsEventStore
+    def event_store
+      Rails.configuration.event_store
+    end
+  end
+end
+
 RSpec.configure do |config|
-  config.include Wisper::RSpec::BroadcastMatcher
-  config.include PubSub::Testing::SubscriptionsHelper
+  config.include Support::RailsEventStore
   config.include PubSub::Testing::EventDataHelper
 
-  config.before(:suite) do
-    PubSub::Testing::SubscriptionsHelper.clear_wisper_subscriptions!
-  end
-
-  config.around(:each, subscribers: true) do |example|
-    domain_name = example.metadata[:described_class].to_s.underscore
-    PubSub.subscriptions.register(domain_name)
+  config.around(:each, in_memory_res_client: true) do |example|
+    current_event_store = Rails.configuration.event_store
+    Rails.configuration.event_store = RubyEventStore::Client.new(
+      repository: RubyEventStore::InMemoryRepository.new
+    )
     example.run
-    clear_wisper_subscriptions!
+    Rails.configuration.event_store = current_event_store
   end
 end
 ```
 
+This will gives you an opportunity to use `in_memory_res_client` which will not create object in the database and do not call all dependent logic.
+
 ### Testing subscription
 
 Testing subscription is as easy as telling what domains should subscribe to what event in what way.
-Example of `subscribe_to` matcher can be found [here](https://gist.github.com/stevo/bd11c8dae812c919de6a61d1292dbfe1).
+
 Example:
 
 ```ruby
-RSpec.describe Messaging, subscribers: true do
+# spec/support/matchers/subscribe_to.rb
+
+RSpec::Matchers.define :subscribe_to do |event_name|
+  match do |domain|
+    handler_class = build_handler_class(event_name, domain)
+    event_class = build_event_class(event_name)
+    subscription_type = async? ? :async : :sync
+
+    expect(
+      EventHandlerBuilder.new(handler_class, subscription_type)
+    ).to have_subscribed_to_events(event_class).in(event_store)
+  end
+
+  chain :asynchronously do
+    @asynchronously = true
+  end
+
+  private
+
+  def build_handler_class(event_name, domain)
+    handler_name = event_name.to_s.sub('__', '/').camelize
+    handler_name += 'Handler'
+    handler_name.remove!('::')
+    handler_name.prepend("#{domain.name}::")
+    handler_name.constantize
+  end
+
+  def build_event_class(event_name)
+    event_class_name = event_name.to_s.sub('__', '/').camelize
+    event_class_name += 'Event'
+    event_class_name.prepend('RailsEventStore::')
+    event_class_name.constantize
+  end
+
+  def async?
+    @asynchronously
+  end
+end
+
+# spec/subscriptions/messaging_spec.rb
+
+RSpec.describe Messaging do
   it { is_expected.to subscribe_to(:ordering__order_created).asynchronously }
 end
 ```
 
 ### Testing publishers
 
-To test publisher it is crucial to test if event was emitted (broadcasted) under certain conditions (if any).
+To test publisher it is crucial to test if event was emitted under certain conditions (if any).
 
 Example:
 
@@ -217,20 +293,21 @@ RSpec.describe Order do
       customer = create(:customer)
       line_items = create_list(:line_item, 2)
 
-      expect {
-        Order.create(
-          customer: customer,
-          total_amount: 100.99,
-          comment: 'Small order',
-          line_items: line_items
+      Order.create(
+        customer: customer,
+        total_amount: 100.99,
+        comment: 'Small order',
+        line_items: line_items
+      )
+
+      expect(event_store).to have_published(
+        an_event(RailsEventStore::Ordering::OrderCreatedEvent).with_data(
+          order_id: fetch_next_id_for(Order),
+            total_amount: 100.99,
+            comment: 'Small order',
+            line_items: line_items
         )
-      }.to broadcast(
-             :ordering__order_created,
-             order_id: fetch_next_id_for(Order),
-             total_amount: 100.99,
-             comment: 'Small order',
-             line_items: line_items
-           )
+      ).in_stream('ordering__order_created')
     end
   end
 end
@@ -267,19 +344,6 @@ module Messaging
       end
     end
   end
-end
-```
-### Integration testing
-
-By default all subscriptions are cleared in testing environment to enforce testing in isolation.
-To enable integration testing, a test can be wrapped in block provided by `with_subscription_to` helper.
-This way events emitted by code executed within this block will be handled by handlers from domains provided as arguments to `with_subscription_to` helper.
-
-```ruby
-it 'does something' do
-    with_subscription_to('messaging', 'logging') do
-      # setup, subject, assertions etc.
-    end
 end
 ```
 
@@ -334,33 +398,6 @@ logging:
   all_events: sync
 ```
 
-# `emit` vs `broadcast`
-
-PubSub on Rails leverages `wisper` and `wisper-sidekiq` under the hood.
-This is why instead of using `emit`, you can broadcast events by using wisper's `broadcast` method.
-
-```ruby
-# app/models/order.rb
-
-class Order < ApplicationRecord
-  include Wisper::Publisher
-
-  #...
-
-  after_create do
-    broadcast(
-      :ordering__guest_checked_in,
-      order_id: id,
-      line_items: line_items,
-      total_amount: total_amount,
-      comment: comment
-    )
-  end
-end
-```
-
-Why `emit` then? `emit` provides a couple of simplifications that make emitting events easier and more reliable.
-
 ## Payload verification
 
 Every time event is emitted, its payload is supplied to corresponding event class and is verified.
@@ -370,7 +407,7 @@ Example:
 
 ```ruby
 module Accounts
-  class PersonCreatedEvent < DomainEvent
+  class PersonCreatedEvent < PubSub::DomainEvent
     attribute :person_id, Types::Strict::Integer
   end
 end
@@ -401,7 +438,7 @@ end
 
 ## Automatic event payload population
 
-Whenever you emit an event, it will try to populate its payload with data using public interface of object it is emitted from within. 
+Whenever you emit an event, it will try to populate its payload with data using public interface of object it is emitted from within.
 
 ```ruby
 # app/models/oriering/order.rb
@@ -421,16 +458,6 @@ module Ordering
     end
   end
 end
-```
-
-## Manually broadcasting events
-
-If for some reason you need to safely broadcast some event, the best way is to instantiate its class and call `#broadcast!` on it.
-
-Example:
-
-```ruby
-Ordering::OrderCreatedEvent.new(order_id: 1, total_amount: 25, line_items: []).broadcast!
 ```
 
 # TODO
