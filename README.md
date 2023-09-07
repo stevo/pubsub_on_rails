@@ -87,7 +87,7 @@ Event example:
 ```ruby
 # app/events/rails_event_store/ordering/order_created_event.rb
 
-module RailsEventStore
+module PubSub
   module Ordering
     class OrderCreatedEvent < PubSub::EventWithType
       def stream_names
@@ -264,7 +264,7 @@ RSpec::Matchers.define :subscribe_to do |event_name|
   def build_event_class(event_name)
     event_class_name = event_name.to_s.sub('__', '/').camelize
     event_class_name += 'Event'
-    event_class_name.prepend('RailsEventStore::')
+    event_class_name.prepend('PubSub::')
     event_class_name.constantize
   end
 
@@ -301,7 +301,7 @@ RSpec.describe Order do
       )
 
       expect(event_store).to have_published(
-        an_event(RailsEventStore::Ordering::OrderCreatedEvent).with_data(
+        an_event(PubSub::Ordering::OrderCreatedEvent).with_data(
           order_id: fetch_next_id_for(Order),
             total_amount: 100.99,
             comment: 'Small order',

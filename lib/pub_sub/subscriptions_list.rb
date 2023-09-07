@@ -52,7 +52,7 @@ module PubSub
 
     def subscribe_to_event(domain_name, event_name, subscription_type)
       event_domain, name = event_name.split('__').map(&:camelize)
-      event_class = "RailsEventStore::#{event_domain}::#{name}Event".constantize
+      event_class = "PubSub::#{event_domain}::#{name}Event".constantize
       handler_class = "#{domain_name.camelize}::#{event_domain}#{name}Handler".constantize
       event_store.subscribe(
         EventHandlerBuilder.new(handler_class, subscription_type), to: [event_class]

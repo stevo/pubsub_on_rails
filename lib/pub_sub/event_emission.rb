@@ -49,7 +49,7 @@ module PubSub
     end
 
     def dry_struct_event_class
-      @dry_struct_event_class ||= event_class.name.remove('RailsEventStore').constantize
+      @dry_struct_event_class ||= event_class.name.remove('PubSub').constantize
     end
 
     # rubocop:disable Metrics/MethodLength

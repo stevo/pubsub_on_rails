@@ -57,7 +57,7 @@ module PubSub
     end
 
     def res_event_class_name
-      @res_event_class_name ||= "rails_event_store/#{event_name_with_domain}_event".classify
+      @res_event_class_name ||= "pub_sub/#{event_name_with_domain}_event".classify
     end
 
     def event_class_name

@@ -4,7 +4,7 @@ module PubSub
       super(
         event_id:,
         metadata:,
-        data: self.class.name.remove('RailsEventStore').constantize.new(
+        data: self.class.name.remove('PubSub').constantize.new(
           data.deep_symbolize_keys
         ).attributes
       )
