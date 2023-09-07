@@ -202,16 +202,8 @@ The recommended RSpec configuration is as follows:
 
 require 'pub_sub/testing'
 
-module Support
-  module RailsEventStore
-    def event_store
-      Rails.configuration.event_store
-    end
-  end
-end
-
 RSpec.configure do |config|
-  config.include Support::RailsEventStore
+  config.include PubSub::Testing::RailsEventStore
   config.include PubSub::Testing::EventDataHelper
 
   config.around(:each, in_memory_res_client: true) do |example|
