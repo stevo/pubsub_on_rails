@@ -80,7 +80,7 @@ module Ordering
 end
 ```
 
-Since we are using Rails Event Store to create event this give as possibility to create **stream** of events. We can treat them as sub-list of events. To be able to use that functionality we need to declare which stream are interesting for us. By default we add event to stream based on its name. In case of our example it is `ordering__order_created`. We can provide also custom streams even based on some additional data from the event attributes.
+Since we are using Rails Event Store to handle events, it gives us a possibility to create **stream** of events. We can treat them as sub-list of events. To be able to use that functionality we need to declare which streams given event should be part of. By default we add event to stream based on its name. In case of our example it is `ordering__order_created`. We can provide also custom streams even based on some additional data from the event attributes (for example to group all events related to given order).
 
 Event example:
 
@@ -217,7 +217,7 @@ RSpec.configure do |config|
 end
 ```
 
-This will gives you an opportunity to use `in_memory_res_client` which will not create object in the database and do not call all dependent logic.
+This will allow you to use `in_memory_res_client` which will not create object (event) in the database and do not call all dependent logic (handlers).
 
 ### Testing subscription
 
@@ -226,47 +226,6 @@ Testing subscription is as easy as telling what domains should subscribe to what
 Example:
 
 ```ruby
-# spec/support/matchers/subscribe_to.rb
-
-RSpec::Matchers.define :subscribe_to do |event_name|
-  match do |domain|
-    handler_class = build_handler_class(event_name, domain)
-    event_class = build_event_class(event_name)
-    subscription_type = async? ? :async : :sync
-
-    expect(
-      EventHandlerBuilder.new(handler_class, subscription_type)
-    ).to have_subscribed_to_events(event_class).in(event_store)
-  end
-
-  chain :asynchronously do
-    @asynchronously = true
-  end
-
-  private
-
-  def build_handler_class(event_name, domain)
-    handler_name = event_name.to_s.sub('__', '/').camelize
-    handler_name += 'Handler'
-    handler_name.remove!('::')
-    handler_name.prepend("#{domain.name}::")
-    handler_name.constantize
-  end
-
-  def build_event_class(event_name)
-    event_class_name = event_name.to_s.sub('__', '/').camelize
-    event_class_name += 'Event'
-    event_class_name.prepend('PubSub::')
-    event_class_name.constantize
-  end
-
-  def async?
-    @asynchronously
-  end
-end
-
-# spec/subscriptions/messaging_spec.rb
-
 RSpec.describe Messaging do
   it { is_expected.to subscribe_to(:ordering__order_created).asynchronously }
 end
