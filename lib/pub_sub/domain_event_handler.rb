@@ -1,7 +1,7 @@
 module PubSub
   class DomainEventHandler
-    def initialize(*args)
-      @event_data_hash = args.extract_options!
+    def initialize(event)
+      @event = event
     end
 
     def call
@@ -14,7 +14,7 @@ module PubSub
 
     private
 
-    attr_reader :event_data_hash
+    attr_reader :event
 
     def process_event?
       true
@@ -22,6 +22,10 @@ module PubSub
 
     def event_data
       @event_data ||= OpenStruct.new(event_data_hash)
+    end
+
+    def event_data_hash
+      event.data
     end
   end
 end
