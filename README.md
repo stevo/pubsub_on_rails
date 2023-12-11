@@ -33,6 +33,73 @@ Rails.configuration.to_prepare do
 end
 ```
 
+## Migrating from 0.0.7 to 1.0.0
+
+1. Update gem to version `1.0.0`
+
+```ruby
+# Gemfile
+
+gem 'pubsub_on_rails', '~> 1.0.0'
+```
+
+2. Run Rails Event Store migrations
+
+**MySQL**
+```
+bin/rails generate rails_event_store_active_record:migration
+bin/rails db:migrate
+```
+
+**PostgreSQL**
+```
+bin/rails generate rails_event_store_active_record:migration --data-type=jsonb
+bin/rails db:migrate
+```
+
+3. Update initializer to use Rails Event Store Client
+
+```ruby
+# config/initializers/pub_sub.rb
+
+require 'pub_sub/subscriptions_list'
+
+Rails.configuration.to_prepare do
+  Rails.configuration.event_store = event_store = RailsEventStore::Client.new(
+    repository: RailsEventStoreActiveRecord::EventRepository.new(serializer: RubyEventStore::NULL)
+  )
+
+  PubSub::SubscriptionsList.config_path =
+    Rails.root.join('config/subscriptions.yml')
+  PubSub::SubscriptionsList.load!(event_store)
+end
+```
+
+4. Override `EventWorker` or override `EventHandlerBuilder` if needed
+
+For example when you want to have different workers for different events:
+
+```ruby
+# config/initializers/pub_sub.rb
+
+PubSub::EventHandlerBuilder.class_eval do
+  def call(event)
+    if async?
+      if class_name.to_s.include?('MyType')
+        SingleThreadEventWorker.perform_in(2.seconds, class_name.to_s, event.event_id)
+      else
+        EventWorker.perform_in(2.seconds, class_name.to_s, event.event_id)
+      end
+    else
+      class_name.new(event).call!
+    end
+  end
+end
+```
+
+5. Add event objects for Rails Event Store streams. Check [Event](README.md#Event) section.
+6. Update test cases to use new matchers. Check [Testing](README.md#Testing) section.
+
 ## Entities
 
 There are five entities that are core to PubSub on Rails: domains, events, event publishers, event handlers and subscriptions.
