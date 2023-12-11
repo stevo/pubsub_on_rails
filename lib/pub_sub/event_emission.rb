@@ -48,28 +48,32 @@ module PubSub
       end
     end
 
-    def dry_struct_event_class
-      @dry_struct_event_class ||= event_class.name.remove('PubSub').constantize
-    end
-
     # rubocop:disable Metrics/MethodLength
     def full_payload
-      dry_struct_event_class.attribute_names.each_with_object({}) do |attribute_name, result|
+      attribute_names.each_with_object({}) do |attribute_name, result|
         result[attribute_name] = PayloadAttribute.new(
           attribute_name, explicit_payload, context
         ).get
       rescue PayloadAttribute::CannotEvaluate => e
-        next if dry_struct_event_class.schema.key(attribute_name).default?
+        next if schema.key(attribute_name).default?
 
         raise(
           EventPayloadArgumentMissing,
-          "Event [#{dry_struct_event_class.name}] expects [#{attribute_name}] " \
+          "Event [#{event_class.name}] expects [#{attribute_name}] " \
           "payload attribute to be either exposed as [#{e.message}] method in emitting object " \
           'or provided as argument'
         )
       end
     end
     # rubocop:enable Metrics/MethodLength
+
+    def attribute_names
+      (abstract_event_class || event_class.instance_variable_get(:@schema_validator)).attribute_names
+    end
+
+    def schema
+      (abstract_event_class || event_class.instance_variable_get(:@schema_validator)).schema
+    end
 
     def event_store
       Rails.configuration.event_store

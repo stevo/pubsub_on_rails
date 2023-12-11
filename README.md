@@ -16,7 +16,7 @@ This is especially true for applications covering many side effects, integration
 ```ruby
 # Gemfile
 
-gem 'pubsub_on_rails', '~> 1.0.0'
+gem 'pubsub_on_rails', '~> 1.1.0'
 
 # config/initializers/pub_sub.rb
 
@@ -69,13 +69,17 @@ Event example:
 ```ruby
 # app/events/ordering/order_created_event.rb
 
-module Ordering
-  class OrderCreatedEvent < PubSub::DomainEvent
-    attribute :order_id, Types::Strict::Integer
-    attribute :customer_id, Types::Strict::Integer
-    attribute :line_items, Types::Strict::Array
-    attribute :total_amount, Types::Strict::Float
-    attribute :comment, Types::Strict::String.optional
+module PubSub
+  module Ordering
+    class OrderCreatedEvent < PubSub::EventWithType
+      schema do
+        attribute :order_id, Types::Strict::Integer
+        attribute :customer_id, Types::Strict::Integer
+        attribute :line_items, Types::Strict::Array
+        attribute :total_amount, Types::Strict::Float
+        attribute :comment, Types::Strict::String.optional
+      end
+    end
   end
 end
 ```
@@ -351,15 +355,19 @@ logging:
 
 ## Payload verification
 
-Every time event is emitted, its payload is supplied to corresponding event class and is verified.
+Every time event is emitted, its payload is supplied to corresponding `Dry::Struct` event class and is verified.
 This ensures that whenever we emit event we can be sure its payload is matching specification.
 
 Example:
 
 ```ruby
-module Accounts
-  class PersonCreatedEvent < PubSub::DomainEvent
-    attribute :person_id, Types::Strict::Integer
+module PubSub
+  module Accounts
+    class PersonCreatedEvent < PubSub::EventWithType
+      schema do
+        attribute :person_id, Types::Strict::Integer
+      end
+    end
   end
 end
 ```
